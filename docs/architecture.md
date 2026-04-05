@@ -1,49 +1,88 @@
 # Architecture
 
-## 狙い
-量子化学計算の厳密さよりも、「有機反応の電子の流れを UI 上で説明しやすくすること」を優先した構成にしている。  
-責務は次の 3 層に分けた。
+## 全体方針
 
-1. `src/model/reactionModel.js`  
-   反応座標 `progress` を受け取り、原子位置・結合次数・電子雲・注釈・エネルギーを返す。
-2. `src/render/reactionScene.js` / `src/render/energyProfile.js`  
-   モデルが返した状態を SVG に描画する。
-3. `src/main.js`  
-   スライダー、再生、リセットなど UI のイベント処理と再描画を担当する。
+このリポジトリでは、SN2 反応の 3D 電子雲表示を次の責務に分けています。
 
-## なぜこの分離にしたか
-描画ロジックと化学モデルを混ぜると、面接で「表示の都合でモデルが歪んでいるのか」「モデルを差し替えられるのか」が説明しにくい。  
-そこで、1 本の `progress` から状態を返す純粋関数を中心に置き、描画側はそれを読むだけにしている。
+1. 反応経路を生成する
+2. 基底関数と電子構造を計算する
+3. 実空間グリッドへ射影する
+4. 3D 等値面として描画する
 
-## 反応モデル
-題材は次の SN2 反応。
+UI は `main.js` が受け持ちますが、化学モデルと描画は分離しています。
 
-`HO⁻ + CH₃Br → CH₃OH + Br⁻`
+## モジュール分割
 
-モデル内部では以下を補間している。
+### `src/chemistry/`
 
-- O の接近
-- Br の離脱
-- C–O / C–Br の結合次数
-- メチル基の反転量
-- 表示用の部分電荷
-- 反応座標に沿った相対エネルギー
+- `reactionPath.js`
+  - `q ∈ [0,1]` に対する原子配置を返す
+  - O···C 形成、C···Cl 切断、CH₃ の umbrella inversion をまとめて扱う
+- `elements.js`
+  - 元素色、表示半径、価電子数、Gaussian パラメータ、pseudo-core 設定
 
-## 電子雲の扱い
-電子雲は厳密な電子密度ではなく、ぼかした楕円で表現している。  
-表示しているのは主に以下の 4 種類。
+### `src/math/`
 
-- O 上に残る孤立電子対
-- O 側から C へ向かう攻撃電子雲
-- 形成中の C–O 結合電子雲
-- Br 側へ流れる C–Br 結合電子雲
+- `matrix.js`
+  - 行列積、転置、対称直交化、Jacobi 固有値法
+- `numerics.js`
+  - `smoothstep`, `percentile`, `linspace`
 
-## テスト対象
-`tests/reactionModel.test.js` では、表示そのものではなく、反応座標に対するモデルの整合性を確認している。
+### `src/physics/`
 
-- 反応物側では C–Br が強く、C–O が弱い
-- 遷移状態で両者が部分結合になる
-- 生成物側で Br が十分に離れる
-- エネルギーが中央付近で最大になる
+- `gaussianBasis.js`
+  - s / p Cartesian Gaussian の正規化
+  - AO 値評価
+  - AO 間 overlap integral
+- `extendedHuckel.js`
+  - overlap matrix `S`
+  - Hamiltonian `H`
+  - generalized eigenproblem の解法
+  - density matrix / Mulliken charge / overlap population
+- `sampler.js`
+  - `ρ(r)` や HOMO/LUMO 振幅の 3D グリッド評価
+  - pseudo-core 密度の加算
+  - isovalue の統計量算出
 
-描画 DOM のテストより、まずは「反応モデルの説明責任」を担保することを優先した。
+### `src/worker/`
+
+- `densityWorker.js`
+  - reaction coordinate ごとの電子構造計算と 3D field sampling を実行
+  - main thread を描画専用に寄せる
+
+### `src/render/`
+
+- `scene3d.js`
+  - Three.js scene
+  - atoms / bonds / marching cubes 等値面
+- `energyDiagram.js`
+  - 軌道エネルギーの 2D ladder 表示
+
+## データフロー
+
+1. UI が `progress`, `view`, `resolution` を更新
+2. `main.js` が Worker に request を送る
+3. Worker が `reactionPath → basis → Hückel → density sampling` を実行
+4. main thread が等値面・エネルギー図・電荷表を更新
+
+## 設計上の意図
+
+### 1. `scene3d.js` を計算コードから切り離した
+
+描画側は field array を受け取って表示するだけです。
+分子軌道計算の詳細を UI コンポーネントに混ぜないようにしています。
+
+### 2. Worker を先に置いた
+
+reaction coordinate を動かすたびに 3D field を再計算するので、main thread で処理すると回転操作が重くなります。
+そのため、密度評価は Worker 側で完結させています。
+
+### 3. 計算モデルは小さくても説明できる粒度にした
+
+大規模な量子化学コードより、
+
+- basis をどう置くか
+- `S` と `H` をどう作るか
+- `ρ(r)` をどう描くか
+
+が面接で説明しやすい構成を優先しています。

@@ -1,136 +1,171 @@
-# SN2 Electron Cloud Simulator
+# SN2 3D Electron Cloud Simulator
 
-HO⁻ + CH₃Br → CH₃OH + Br⁻ を題材に、SN2 置換反応における電子の流れを 2D の電子雲モデルで可視化する教育用シミュレーターです。
+`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の SN2 反応を題材に、反応座標に沿った 3D 電子雲をブラウザで可視化するアプリです。
 
-> This project is a pedagogical visualizer, not a quantum chemistry engine.
+今回は「それっぽい電子アニメ」ではなく、各反応座標ごとに実際に価電子密度を計算してから表示しています。内部では、最小基底 Gaussian AO・重なり行列 `S`・extended Hückel 型 Hamiltonian `H`・密度行列 `P` を組み、
 
-## このプロジェクトで解決したいこと
-有機化学反応の説明では、曲矢印だけでは「電子密度がどこへ移っているか」を直感的に伝えにくいことがあります。  
-このプロジェクトでは、SN2 反応の反応座標に沿って、以下を同時に見せます。
+`ρ(r) = Σμ Σν Pμν χμ(r) χν(r)`
 
-- 求核剤の接近
-- 形成中の C–O 結合
-- 切れつつある C–Br 結合
-- 脱離基側へ偏る電子密度
-- 遷移状態付近のエネルギー極大
+を 3D グリッド上で評価しています。
+
+## 何を作ったか
+
+このプロジェクトは、`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の反応経路を 1 次元の reaction coordinate `q ∈ [0, 1]` で表し、各 `q` に対して次を行います。
+
+1. SN2 らしい幾何を生成する
+2. H / C / O / Cl 上に最小基底 AO を置く
+3. AO 重なり行列 `S` を解析的に計算する
+4. extended Hückel 近似で `H` を組む
+5. 一般化固有値問題を解いて MO 係数を得る
+6. 密度行列 `P` を作る
+7. `ρ(r)` や HOMO/LUMO 振幅を 3D グリッドで評価する
+8. Marching Cubes で 3D 等値面として表示する
 
 ## 主な機能
-- 反応進行度スライダー
-- 自動再生 / リセット
-- SVG による電子雲、結合、曲矢印、部分電荷の描画
-- 簡易的な反応エネルギープロファイル表示
-- モデル前提を UI 上に明示
-- Node 標準テストランナーによる反応モデルの検証
 
-## この作品で見てほしい点
-- **ドメイン知識の整理**  
-  SN2 反応のどの要素を表示し、どこを簡略化するかを明示しています。
-- **描画とモデルの分離**  
-  `progress -> reaction state -> SVG render` の流れで責務を分けています。
-- **説明可能な実装範囲**  
-  量子化学の厳密計算に背伸びせず、教育用シミュレーターとして成立する範囲に絞っています。
-- **依存を増やしすぎない設計**  
-  標準ブラウザ API と Node 標準テストだけで完結します。
+- SN2 反応座標スライダー
+- 3D valence density isosurface
+- pseudo-core を加えた total density 表示
+- `Δρ(r)`（反応物基準の差分密度）
+- HOMO / LUMO phase surface
+- O···C / C···Cl 距離、Mulliken 電荷、overlap population の表示
+- orbital energy ladder
+- Web Worker でのグリッド評価
 
-## 使用技術
-- HTML
-- CSS
-- Vanilla JavaScript (ES Modules)
-- SVG
-- Node.js built-in test runner (`node --test`)
+## この作品で見せたいこと
 
-## ディレクトリ構成
-```text
-sn2-electron-cloud-simulator/
-├─ index.html
-├─ package.json
-├─ README.md
-├─ docs/
-│  ├─ architecture.md
-│  └─ design-decisions.md
-├─ src/
-│  ├─ data/
-│  │  └─ reactionPreset.js
-│  ├─ model/
-│  │  └─ reactionModel.js
-│  ├─ render/
-│  │  ├─ energyProfile.js
-│  │  └─ reactionScene.js
-│  ├─ main.js
-│  └─ styles.css
-└─ tests/
-   └─ reactionModel.test.js
-```
+- 題材と計算モデルが一致していること
+- 3D ビジュアライザーの中身に `S`, `H`, `C`, `P` があること
+- 「どこまで計算していて、どこから近似か」を曖昧にしないこと
+- 小さなテーマでも README / docs / tests まで整理すること
 
-## セットアップ
-依存パッケージはありません。Node.js 18 以上があればテストを実行できます。
+## 技術構成
+
+- JavaScript (ES Modules)
+- Three.js
+- Marching Cubes
+- Web Worker
+- Node built-in test runner
+
+## 実行方法
 
 ```bash
-node --version
-npm test
-```
-
-ブラウザ表示は簡易ローカルサーバーで確認してください。
-
-```bash
+cd sn2-reaction-electron-cloud-simulator
 python3 -m http.server 8000
 ```
 
-その後、ブラウザで `http://localhost:8000` を開きます。
+ブラウザで次を開きます。
 
-## 使い方
-1. スライダーで反応進行度を動かす
-2. 再生ボタンで連続アニメーションを見る
-3. 右側の energy profile と model readout で、結合次数と相対エネルギーの変化を追う
-4. 下部の legend と assumptions で、表示の意味と簡略化の前提を確認する
-
-## サンプルの見どころ
-- 反応初期では O 上に孤立電子対があり、C–Br 結合がほぼ完全に残る
-- 中央付近では C–O / C–Br がともに部分結合になり、エネルギーが最大になる
-- 終盤では Br 側に電子密度が集まり、Br⁻ として離脱していく
-
-## 設計上の工夫
-### 1. 1 本の反応座標から全部決める
-`getReactionState(progress)` が唯一の状態生成関数です。  
-これにより、UI イベントや描画が複雑になっても、化学モデルの説明責任を保ちやすくしています。
-
-### 2. 「厳密さ」より「説明可能性」を優先
-電子雲は Gaussian 風の楕円で近似し、結合次数や位置は連続補間しています。  
-実験値や DFT 計算結果の再現ではなく、**どの電子がどこへ移るかを伝えるためのモデル** にしています。
-
-### 3. SVG でレイヤーを明確化
-- 電子雲
-- 結合
-- 曲矢印
-- 原子
-- 電荷記号
-
-を別レイヤーで描き、調整しやすくしています。
-
-## 難しかった点とトレードオフ
-- 電子雲を強調しすぎると反応機構より装飾に見えやすい
-- 逆に化学的厳密さを求めると、短期間のポートフォリオ実装では説明不能になりやすい
-- そのため、今回は **SN2 の定性的理解を支える最小構成** に絞りました
+```text
+http://localhost:8000
+```
 
 ## テスト
+
 ```bash
 npm test
 ```
 
 確認している内容:
-- 反応物側 / 遷移状態 / 生成物側での結合次数の整合性
-- Br の離脱位置
-- エネルギーバリアのピーク位置
-- ステージ判定の境界
+
+- Gaussian 基底の正規化
+- 反応経路の幾何整合性
+- `Tr(PS) = 22` による価電子数保存
+- Mulliken 電荷総和が `-1`
+- O–C 形成 / C–Cl 切断の overlap population 変化
+- 3D グリッド積分で valence density が 22 電子に近いこと
+- `Δρ` の空間積分が概ね 0 に近いこと
+
+## ディレクトリ構成
+
+```text
+sn2-reaction-electron-cloud-simulator/
+├─ index.html
+├─ package.json
+├─ README.md
+├─ .gitignore
+├─ docs/
+│  ├─ architecture.md
+│  ├─ scientific-model.md
+│  ├─ interview-notes.md
+│  └─ test-plan.md
+├─ src/
+│  ├─ chemistry/
+│  │  ├─ elements.js
+│  │  └─ reactionPath.js
+│  ├─ math/
+│  │  ├─ matrix.js
+│  │  └─ numerics.js
+│  ├─ physics/
+│  │  ├─ gaussianBasis.js
+│  │  ├─ extendedHuckel.js
+│  │  └─ sampler.js
+│  ├─ render/
+│  │  ├─ scene3d.js
+│  │  └─ energyDiagram.js
+│  ├─ worker/
+│  │  └─ densityWorker.js
+│  ├─ main.js
+│  └─ styles.css
+└─ tests/
+   ├─ gaussianBasis.test.js
+   ├─ reactionPath.test.js
+   ├─ extendedHuckel.test.js
+   └─ sampler.test.js
+```
+
+## 何を計算していて、何を近似しているか
+
+### 計算しているもの
+
+- AO 値と AO 重なり積分
+- 非直交基底の一般化固有値問題
+- 22 個の価電子を持つ密度行列
+- `ρ(r)` の 3D グリッド評価
+- Mulliken charge / overlap population
+
+### 近似しているもの
+
+- Hamiltonian は extended Hückel
+- 基底は最小基底の 1 primitive Gaussian
+- 反応経路は事前定義の 1D path
+- all-electron 密度ではなく、主計算は価電子密度
+- pseudo-core は見た目用の補助密度
+
+つまり、**反応系そのものを題材にした計算ベースの可視化**ではあるが、**ab initio / DFT の定量予測器ではない**という立ち位置です。
+
+## 見どころ
+
+### Valence density
+
+反応中心を含む価電子雲そのものを見ます。まず題材に対して名前負けしていないビューです。
+
+### Δρ vs reactants
+
+電子再配分を見るなら一番分かりやすいビューです。O 側の gain と C–Cl 側の loss が反応座標に沿って動きます。
+
+### HOMO / LUMO phase
+
+符号付き等値面にしてあるので、SN2 軸に沿った位相構造や節面が見えます。
+
+## 設計上の工夫
+
+1. 描画より先に計算モデルを置いた
+2. 反応の見どころが出るように `density` だけでなく `Δρ` と frontier orbital も用意した
+3. 3D グリッド評価は Worker に逃がして UI を固めにくくした
+4. 近似の限界を README と UI の両方で明示した
 
 ## 既知の制約
-- 3D 構造や厳密な軌道形状は扱っていません
-- 実測値ベースの速度論・熱力学計算はしていません
-- 反応は SN2 の単一ケースに固定しています
+
+- 反応障壁や実験電子密度の定量再現を狙うモデルではない
+- basis が小さいので密度の細部は粗い
+- pseudo-core は見た目用の近似であり多電子コア計算ではない
+- 反応経路は最適化済み IRC ではない
 
 ## 今後の改善案
-- 反応定義 JSON を読み込む汎用ビューワへの拡張
-- SN1 / E2 / 求電子付加反応との比較モード
-- 軌道ラベル (`σ* C–Br`, lone pair on O) の表示切り替え
-- 遷移状態だけを拡大表示するフォーカスビュー
-- GitHub Pages 用のデプロイ設定追加
+
+- contracted Gaussian への拡張
+- 任意 MO の選択表示
+- 反応ごとの JSON 定義対応
+- 等値面の PNG / GLTF 書き出し
+- IRC や外部幾何データの読込対応

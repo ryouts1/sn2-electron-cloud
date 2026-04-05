@@ -3,104 +3,132 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SN2 Electron Cloud Simulator</title>
+    <title>SN2 3D Electron Cloud Simulator</title>
+    <meta
+      name="description"
+      content="OH⁻ + CH₃Cl → CH₃OH + Cl⁻ の反応座標に沿って、extended Hückel と Gaussian 基底で 3D 電子密度を評価するシミュレーター"
+    />
     <link rel="stylesheet" href="./src/styles.css" />
+    <script type="importmap">
+      {
+        "imports": {
+          "three": "https://cdn.jsdelivr.net/npm/three@0.164.1/build/three.module.js",
+          "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.164.1/examples/jsm/"
+        }
+      }
+    </script>
   </head>
   <body>
-    <main class="app-shell">
-      <header class="page-header">
-        <div>
-          <p class="eyebrow">Organic Chemistry Visualizer</p>
-          <h1>SN2 Electron Cloud Simulator</h1>
-          <p class="lead" id="project-summary">
-            水酸化物イオンによる臭化メチルの SN2 置換反応を、簡略化した電子雲モデルで追う教育用シミュレーター。
+    <div class="app-shell">
+      <aside class="panel control-panel">
+        <div class="title-block">
+          <p class="eyebrow">Reaction-specific quantum visualization</p>
+          <h1>OH⁻ + CH₃Cl → CH₃OH + Cl⁻</h1>
+          <p class="lead">
+            反応座標に沿って 16 個の価電子 Gaussian 基底から密度行列を作り、
+            3D グリッド上で ρ(r) を評価する SN2 電子雲シミュレーターです。
           </p>
         </div>
-        <div class="equation-block">
-          <p class="equation-label">Reaction</p>
-          <p class="equation" id="reaction-equation"></p>
-          <p class="model-note">※ 量子化学の厳密計算ではなく、教育用の 2D 可視化モデルです。</p>
+
+        <div class="control-group">
+          <label for="progress-range">Reaction coordinate</label>
+          <input id="progress-range" type="range" min="0" max="100" value="0" step="1" />
+          <div class="inline-row small-metrics">
+            <span id="progress-label">0.00</span>
+            <div class="button-row compact">
+              <button id="preset-reactants">Reactants</button>
+              <button id="preset-ts">TS</button>
+              <button id="preset-products">Products</button>
+            </div>
+          </div>
+          <div class="button-row">
+            <button id="play-toggle" class="primary">Play</button>
+            <button id="reset-view">Camera reset</button>
+          </div>
         </div>
-      </header>
 
-      <section class="layout">
-        <section class="panel panel--canvas">
-          <div class="panel__head">
-            <div>
-              <h2>Reaction scene</h2>
-              <p class="panel__subtext">backside attack と電子密度の移り変わりを 1 本の反応座標で表現します。</p>
-            </div>
-            <div class="stage-chip" id="stage-chip"></div>
+        <div class="control-group">
+          <label for="view-mode">View mode</label>
+          <select id="view-mode">
+            <option value="valence-density">Valence density ρ(r)</option>
+            <option value="total-density">Valence + pseudo-core density</option>
+            <option value="delta-density">Δρ(r) vs reactants</option>
+            <option value="homo-phase">HOMO phase surface</option>
+            <option value="lumo-phase">LUMO phase surface</option>
+          </select>
+        </div>
+
+        <div class="control-group two-column-controls">
+          <div>
+            <label for="grid-resolution">Grid resolution</label>
+            <select id="grid-resolution">
+              <option value="28">28³</option>
+              <option value="34" selected>34³</option>
+              <option value="40">40³</option>
+              <option value="46">46³</option>
+            </select>
           </div>
-
-          <div class="scene-wrap">
-            <svg
-              id="reaction-scene"
-              viewBox="0 0 760 460"
-              role="img"
-              aria-labelledby="scene-title scene-description"
-            >
-              <title id="scene-title">SN2 reaction scene</title>
-              <desc id="scene-description">
-                Hydroxide attacks bromomethane from the backside while electron clouds move from oxygen to carbon and then to bromine.
-              </desc>
-            </svg>
-          </div>
-
-          <p class="stage-description" id="stage-description"></p>
-
-          <div class="legend">
-            <div class="legend__item">
-              <span class="legend__swatch legend__swatch--lone-pair"></span>
-              <span>孤立電子対 / 形成中の電子雲</span>
-            </div>
-            <div class="legend__item">
-              <span class="legend__swatch legend__swatch--leaving"></span>
-              <span>脱離基側へ移る電子密度</span>
-            </div>
-            <div class="legend__item">
-              <span class="legend__line legend__line--partial"></span>
-              <span>部分結合</span>
-            </div>
-            <div class="legend__item">
-              <span class="legend__line legend__line--arrow"></span>
-              <span>電子対の流れ</span>
+          <div>
+            <label for="iso-range">Isovalue</label>
+            <input id="iso-range" type="range" min="3" max="95" value="22" step="1" />
+            <div class="inline-row small-metrics">
+              <span id="iso-label">22</span>
+              <label class="checkbox-row">
+                <input id="auto-iso" type="checkbox" checked />
+                <span>auto</span>
+              </label>
             </div>
           </div>
+        </div>
+
+        <div class="status-box" id="status-box">3D field ready.</div>
+
+        <section class="metrics-grid" id="metric-cards"></section>
+
+        <section class="note-box">
+          <h2>モデルの前提</h2>
+          <p>
+            ab initio / DFT ではありません。価電子は一原子一中心 Gaussian 基底 + extended Hückel、
+            コアは表示用の pseudo-core 密度です。式で密度は計算していますが、数値の解釈は定性的です。
+          </p>
+        </section>
+      </aside>
+
+      <main class="viewer-panel">
+        <div id="viewer"></div>
+        <div class="viewer-legend" id="viewer-legend"></div>
+      </main>
+
+      <aside class="panel detail-panel">
+        <section class="detail-section">
+          <h2>Orbital ladder</h2>
+          <canvas id="energy-diagram" width="320" height="240"></canvas>
         </section>
 
-        <aside class="sidebar">
-          <section class="panel">
-            <h2>Controls</h2>
-            <div class="control-row">
-              <label for="progress-slider">Reaction progress</label>
-              <output id="progress-output" for="progress-slider">0%</output>
-            </div>
-            <input id="progress-slider" type="range" min="0" max="1000" step="1" value="0" />
+        <section class="detail-section">
+          <h2>Frontier summary</h2>
+          <div id="frontier-summary" class="key-value-list"></div>
+        </section>
 
-            <div class="button-row">
-              <button id="play-button" type="button">再生</button>
-              <button id="reset-button" type="button" class="button-secondary">リセット</button>
-            </div>
-          </section>
+        <section class="detail-section">
+          <h2>Bond populations</h2>
+          <div id="bond-summary" class="key-value-list"></div>
+        </section>
 
-          <section class="panel">
-            <h2>Energy profile</h2>
-            <div id="energy-profile" class="energy-profile"></div>
-          </section>
-
-          <section class="panel">
-            <h2>Model readout</h2>
-            <dl id="reaction-stats" class="stat-list"></dl>
-          </section>
-
-          <section class="panel">
-            <h2>Assumptions</h2>
-            <ul id="assumption-list" class="assumption-list"></ul>
-          </section>
-        </aside>
-      </section>
-    </main>
+        <section class="detail-section">
+          <h2>Mulliken charges</h2>
+          <table class="data-table" id="charge-table">
+            <thead>
+              <tr>
+                <th>Atom</th>
+                <th>Charge</th>
+              </tr>
+            </thead>
+            <tbody></tbody>
+          </table>
+        </section>
+      </aside>
+    </div>
 
     <script type="module" src="./src/main.js"></script>
   </body>
