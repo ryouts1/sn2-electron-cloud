@@ -1,88 +1,116 @@
 # Architecture
 
-## 全体方針
+## 目的
 
-このリポジトリでは、SN2 反応の 3D 電子雲表示を次の責務に分けています。
+この版の主目的は、`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` を題材にした 3D 電子雲表示を、**reaction-related cloud only** に寄せることです。
 
-1. 反応経路を生成する
-2. 基底関数と電子構造を計算する
-3. 実空間グリッドへ射影する
-4. 3D 等値面として描画する
+つまり、見た目の派手さよりも
 
-UI は `main.js` が受け持ちますが、化学モデルと描画は分離しています。
+- donor lone pair
+- acceptor `σ*`
+- O–C–Cl 反応チャネル内の density flow
 
-## モジュール分割
+を UI 上で明確に切り出すことを優先しています。
 
-### `src/chemistry/`
+## レイヤー構成
+
+### 1. chemistry
 
 - `reactionPath.js`
-  - `q ∈ [0,1]` に対する原子配置を返す
-  - O···C 形成、C···Cl 切断、CH₃ の umbrella inversion をまとめて扱う
 - `elements.js`
-  - 元素色、表示半径、価電子数、Gaussian パラメータ、pseudo-core 設定
 
-### `src/math/`
+反応幾何と元素パラメータを持つ層です。SN2 の座標、結合長、炭素反転、reactive / spectator の見せ分けはここに閉じています。
+
+### 2. math
 
 - `matrix.js`
-  - 行列積、転置、対称直交化、Jacobi 固有値法
 - `numerics.js`
-  - `smoothstep`, `percentile`, `linspace`
 
-### `src/physics/`
+一般化固有値問題、直交化、補助的な数値関数を持つ層です。
+
+### 3. physics
 
 - `gaussianBasis.js`
-  - s / p Cartesian Gaussian の正規化
-  - AO 値評価
-  - AO 間 overlap integral
 - `extendedHuckel.js`
-  - overlap matrix `S`
-  - Hamiltonian `H`
-  - generalized eigenproblem の解法
-  - density matrix / Mulliken charge / overlap population
+- `reactiveSpace.js`
 - `sampler.js`
-  - `ρ(r)` や HOMO/LUMO 振幅の 3D グリッド評価
-  - pseudo-core 密度の加算
-  - isovalue の統計量算出
 
-### `src/worker/`
+電子状態モデルを扱う層です。
+
+- AO を作る
+- overlap を作る
+- extended Hückel Hamiltonian を作る
+- MO / density matrix を求める
+- reactive donor / acceptor / channel projector を定義する
+- `ρ_reactive(r)`, `Δρ_reactive(r)`, `ψ_reactive(r)` を 3D グリッド上で評価する
+
+### 4. worker
 
 - `densityWorker.js`
-  - reaction coordinate ごとの電子構造計算と 3D field sampling を実行
-  - main thread を描画専用に寄せる
 
-### `src/render/`
+重い場の再計算を worker に逃がしています。ここでは grid evaluation と field packaging を担当します。
+
+### 5. render
 
 - `scene3d.js`
-  - Three.js scene
-  - atoms / bonds / marching cubes 等値面
+- `cloudSampler.js`
+- `colorMap.js`
 - `energyDiagram.js`
-  - 軌道エネルギーの 2D ladder 表示
 
-## データフロー
+描画専用の層です。
 
-1. UI が `progress`, `view`, `resolution` を更新
-2. `main.js` が Worker に request を送る
-3. Worker が `reactionPath → basis → Hückel → density sampling` を実行
-4. main thread が等値面・エネルギー図・電荷表を更新
+- `scene3d.js` は Three.js のシーンと point cloud の描画
+- `cloudSampler.js` は grid field を確率点群へ変換
+- `colorMap.js` は phase / density-flow 用の配色
+- `energyDiagram.js` は donor / acceptor を強調した 2D の MO ラダー
 
-## 設計上の意図
+### 6. main
 
-### 1. `scene3d.js` を計算コードから切り離した
+- `main.js`
 
-描画側は field array を受け取って表示するだけです。
-分子軌道計算の詳細を UI コンポーネントに混ぜないようにしています。
+UI 状態、worker 通信、再サンプリング、再生制御をまとめています。
 
-### 2. Worker を先に置いた
+## 今回の重要な分離点
 
-reaction coordinate を動かすたびに 3D field を再計算するので、main thread で処理すると回転操作が重くなります。
-そのため、密度評価は Worker 側で完結させています。
+### full electronic model と reactive display model を分離した
 
-### 3. 計算モデルは小さくても説明できる粒度にした
+電子状態自体は full valence basis で解いていますが、表示はそこからさらに reactive projector を通しています。
 
-大規模な量子化学コードより、
+これにより、
 
-- basis をどう置くか
-- `S` と `H` をどう作るか
-- `ρ(r)` をどう描くか
+- 計算モデルは壊さずに残せる
+- UI では spectator density を外せる
+- donor / acceptor の定義をあとで差し替えやすい
 
-が面接で説明しやすい構成を優先しています。
+という利点があります。
+
+### field evaluation と cloud rendering を分離した
+
+まず worker で `|ψ|²` や `ρ_reactive(r)` を格子上に作り、その後 main thread 側で点群へ再サンプリングします。
+
+これにより:
+
+- 反応座標を変えない限り重い再計算を避けられる
+- 同じ分布から何度でも stochastic resampling できる
+- 「揺らぐ雲」の見た目を、物理モデルと描画ロジックを混ぜずに実装できる
+
+### reactive mode ごとに sampling rule を分けた
+
+- `reactive-donor`: weight = `|ψ_donor|²`, color = signed `ψ_donor`
+- `reactive-acceptor`: weight = `|ψ_acceptor|²`, color = signed `ψ_acceptor`
+- `reactive-flow`: weight = `|Δρ_reactive|`, color = signed `Δρ_reactive`
+- `reactive-channel`: weight = `ρ_reactive`, color = density magnitude
+
+この設計により、「何を確率として点にしているか」をビューごとに明示できます。
+
+## 点群表示を続ける理由
+
+今回の要求は「反応に関係する電子雲だけを動画的に見せる」ことなので、表示の主役は isosurface ではなく point cloud のままにしています。
+
+点群の方が、
+
+- 確率が高い場所に粒子が集まる
+- 再サンプリングで動画っぽい雲の揺らぎを出せる
+- donor / acceptor の phase sign を自然に載せやすい
+
+という利点があるためです。

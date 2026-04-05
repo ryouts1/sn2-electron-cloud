@@ -99,25 +99,25 @@ export function getReactionGeometry(progress) {
     .map((direction) => addVectors(carbonPosition, scaleVector(direction, C_H_BOND_LENGTH)));
 
   const atoms = [
-    buildAtom('O', 'O', oxygenPosition),
-    buildAtom('H_oh', 'H', hydroxylHydrogenPosition, { label: 'H' }),
-    buildAtom('C', 'C', carbonPosition),
-    buildAtom('Cl', 'Cl', chlorinePosition)
+    buildAtom('O', 'O', oxygenPosition, { kind: 'reactive' }),
+    buildAtom('H_oh', 'H', hydroxylHydrogenPosition, { label: 'H', kind: 'spectator' }),
+    buildAtom('C', 'C', carbonPosition, { kind: 'reactive' }),
+    buildAtom('Cl', 'Cl', chlorinePosition, { kind: 'reactive' })
   ];
 
   methylHydrogenPositions.forEach((position, index) => {
-    atoms.push(buildAtom(`H_c${index + 1}`, 'H', position, { label: 'H' }));
+    atoms.push(buildAtom(`H_c${index + 1}`, 'H', position, { label: 'H', kind: 'spectator' }));
   });
 
   const atomMap = Object.fromEntries(atoms.map((atom) => [atom.id, atom]));
 
   const bonds = [
-    { atoms: ['O', 'H_oh'], order: 1 },
-    { atoms: ['C', 'H_c1'], order: 1 },
-    { atoms: ['C', 'H_c2'], order: 1 },
-    { atoms: ['C', 'H_c3'], order: 1 },
-    { atoms: ['O', 'C'], order: bondOrder(progress, 'forming') },
-    { atoms: ['C', 'Cl'], order: bondOrder(progress, 'breaking') }
+    { atoms: ['O', 'H_oh'], order: 1, role: 'context' },
+    { atoms: ['C', 'H_c1'], order: 1, role: 'spectator' },
+    { atoms: ['C', 'H_c2'], order: 1, role: 'spectator' },
+    { atoms: ['C', 'H_c3'], order: 1, role: 'spectator' },
+    { atoms: ['O', 'C'], order: bondOrder(progress, 'forming'), role: 'reactive' },
+    { atoms: ['C', 'Cl'], order: bondOrder(progress, 'breaking'), role: 'reactive' }
   ];
 
   return {

@@ -21,10 +21,11 @@ self.addEventListener('message', (event) => {
   } = event.data;
 
   try {
+    const startedAt = performance.now();
     const geometry = getReactionGeometry(progress);
     const bounds = computeBounds(geometry.atoms, 2.4);
     const currentModel = computeReactionSnapshot(geometry, { basisScale, couplingScale });
-    const referenceModel = view === 'delta-density'
+    const referenceModel = (view === 'delta-density' || view === 'reactive-flow')
       ? computeReactionSnapshot(getReactionGeometry(0), { basisScale, couplingScale })
       : null;
 
@@ -47,7 +48,10 @@ self.addEventListener('message', (event) => {
       metrics: geometry.metrics,
       bounds: sampled.bounds,
       step: sampled.step,
-      stats: sampled.stats,
+      stats: {
+        ...sampled.stats,
+        computeMs: performance.now() - startedAt
+      },
       summary: {
         basisFunctionCount: currentModel.basisFunctions.length,
         valenceElectronCount: TOTAL_VALENCE_ELECTRONS,
@@ -61,13 +65,25 @@ self.addEventListener('message', (event) => {
         lumoIndex: currentModel.lumoIndex,
         homoEnergy: currentModel.orbitalEnergies[currentModel.homoIndex],
         lumoEnergy: currentModel.orbitalEnergies[currentModel.lumoIndex],
-        gap: currentModel.orbitalEnergies[currentModel.lumoIndex] - currentModel.orbitalEnergies[currentModel.homoIndex]
+        gap: currentModel.orbitalEnergies[currentModel.lumoIndex] - currentModel.orbitalEnergies[currentModel.homoIndex],
+        reactiveOrbitals: {
+          donorIndex: currentModel.reactiveOrbitals.donorIndex,
+          donorEnergy: currentModel.reactiveOrbitals.donorEnergy,
+          donorNorm: currentModel.reactiveOrbitals.donorNorm,
+          donorScore: currentModel.reactiveOrbitals.donorScore,
+          acceptorIndex: currentModel.reactiveOrbitals.acceptorIndex,
+          acceptorEnergy: currentModel.reactiveOrbitals.acceptorEnergy,
+          acceptorNorm: currentModel.reactiveOrbitals.acceptorNorm,
+          acceptorScore: currentModel.reactiveOrbitals.acceptorScore,
+          donorAcceptorGap: currentModel.reactiveOrbitals.donorAcceptorGap,
+          channelElectronCount: currentModel.reactiveOrbitals.channelElectronCount
+        }
       },
-      positiveField: sampled.positiveField.buffer,
-      negativeField: sampled.negativeField.buffer
+      weightField: sampled.weightField.buffer,
+      colorMetricField: sampled.colorMetricField.buffer
     };
 
-    self.postMessage(payload, [sampled.positiveField.buffer, sampled.negativeField.buffer]);
+    self.postMessage(payload, [sampled.weightField.buffer, sampled.colorMetricField.buffer]);
   } catch (error) {
     self.postMessage({
       requestId,

@@ -1,56 +1,92 @@
-# SN2 3D Electron Cloud Simulator
+# SN2 Reactive Probability Cloud Simulator
 
-`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の SN2 反応を題材に、反応座標に沿った 3D 電子雲をブラウザで可視化するアプリです。
+`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の SN2 反応を題材に、**反応に直接関与する電子雲だけ** を 3D の確率点群で表示するブラウザアプリです。
 
-今回は「それっぽい電子アニメ」ではなく、各反応座標ごとに実際に価電子密度を計算してから表示しています。内部では、最小基底 Gaussian AO・重なり行列 `S`・extended Hückel 型 Hamiltonian `H`・密度行列 `P` を組み、
+この版では、全電子密度や spectator な C–H / O–H 電子雲を見せるのではなく、**donor lone pair / acceptor σ* / O–C–Cl 反応チャネルの密度移動** に表示を絞っています。
 
-`ρ(r) = Σμ Σν Pμν χμ(r) χν(r)`
+## 何が変わったか
 
-を 3D グリッド上で評価しています。
+前の版は HOMO / LUMO / total density も選べましたが、この版の UI は **reaction-related cloud only** に寄せています。
 
-## 何を作ったか
+- **Reactive donor cloud**  
+  O 側から炭素へ供与する occupied donor 成分だけを `|ψ|²` の確率雲で表示
+- **Reactive acceptor cloud**  
+  backside attack を受ける virtual acceptor `σ*` 成分だけを `|ψ|²` の確率雲で表示
+- **Reactive Δρ flow**  
+  反応物基準で、反応チャネル内の電子がどこから減り、どこへ増えるかだけを表示
+- **Reactive σ-channel density**  
+  O / C / Cl の x 軸方向反応チャネルに投影した密度だけを表示
 
-このプロジェクトは、`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の反応経路を 1 次元の reaction coordinate `q ∈ [0, 1]` で表し、各 `q` に対して次を行います。
+## reactive-only の定義
 
-1. SN2 らしい幾何を生成する
-2. H / C / O / Cl 上に最小基底 AO を置く
-3. AO 重なり行列 `S` を解析的に計算する
-4. extended Hückel 近似で `H` を組む
-5. 一般化固有値問題を解いて MO 係数を得る
-6. 密度行列 `P` を作る
-7. `ρ(r)` や HOMO/LUMO 振幅を 3D グリッドで評価する
-8. Marching Cubes で 3D 等値面として表示する
+このアプリでいう「反応に関係する電子雲」は、厳密な NBO 解析そのものではありません。以下の projector ベース定義を使っています。
 
-## 主な機能
+1. まず通常どおり extended Hückel + 最小 Gaussian 基底で MO を求める
+2. その上で、O / C / Cl の **反応軸 x 方向の σ チャネル** に重みを持つ AO projector を作る
+3. occupied 側では、HOMO 近傍でその projector 成分が最も大きい軌道を **reactive donor** として選ぶ
+4. virtual 側では、LUMO 近傍でその projector 成分が最も大きい軌道を **reactive acceptor** として選ぶ
+5. reactive channel density / flow では、その projector に入る AO 成分だけで密度を再評価する
 
-- SN2 反応座標スライダー
-- 3D valence density isosurface
-- pseudo-core を加えた total density 表示
-- `Δρ(r)`（反応物基準の差分密度）
-- HOMO / LUMO phase surface
-- O···C / C···Cl 距離、Mulliken 電荷、overlap population の表示
-- orbital energy ladder
-- Web Worker でのグリッド評価
+つまり、**見せたい反応チャネルを UI 上で明示的に抽出する** ための表示です。
 
-## この作品で見せたいこと
+## 計算モデル
 
-- 題材と計算モデルが一致していること
-- 3D ビジュアライザーの中身に `S`, `H`, `C`, `P` があること
-- 「どこまで計算していて、どこから近似か」を曖昧にしないこと
-- 小さなテーマでも README / docs / tests まで整理すること
+1. `progress ∈ [0, 1]` から SN2 反応幾何を生成
+2. H / C / O / Cl に最小基底 Gaussian AO を配置
+3. overlap 行列 `S` を解析的に計算
+4. extended Hückel 型 Hamiltonian `H` を構成
+5. 一般化固有値問題を解いて MO を得る
+6. 密度行列 `P` を構成
+7. donor / acceptor / reactive channel の projector を組む
+8. `|ψ_reactive|²`, `ρ_reactive(r)`, `Δρ_reactive(r)` を 3D グリッド上で評価
+9. importance sampling で point cloud を生成
 
-## 技術構成
+## 表示モード
 
-- JavaScript (ES Modules)
-- Three.js
-- Marching Cubes
-- Web Worker
-- Node built-in test runner
+### Reactive donor cloud
+
+- 場の元データ: 正規化した reactive donor amplitude `ψ_donor(r)`
+- 点の出現確率: `|ψ_donor(r)|²`
+- 色: signed `ψ_donor(r)`
+
+### Reactive acceptor cloud
+
+- 場の元データ: 正規化した reactive acceptor amplitude `ψ_acceptor(r)`
+- 点の出現確率: `|ψ_acceptor(r)|²`
+- 色: signed `ψ_acceptor(r)`
+
+### Reactive Δρ flow
+
+- 場の元データ: `Δρ_reactive(r) = ρ_reactive,current(r) - ρ_reactive,reactants(r)`
+- 点の出現確率: `|Δρ_reactive(r)|`
+- 色: density gain / loss
+
+### Reactive σ-channel density
+
+- 場の元データ: `ρ_reactive(r)`
+- 点の出現確率: `ρ_reactive(r)`
+- 色: density magnitude
+
+## 何が正しく、何が近似か
+
+### この版で揃えていること
+
+- donor / acceptor cloud は `|ψ|²` に基づく probability cloud
+- density flow は `|Δρ|` で点を打ち、符号は色で分ける
+- spectator H basis は reactive projector から外している
+- UI では reaction-related view だけを出している
+
+### 近似であること
+
+- 電子状態モデルは extended Hückel
+- AO projector による reactive 定義は表示用の近似分解
+- 反応経路は手組みの 1D path
+- ab initio / DFT cube を直接描いているわけではない
 
 ## 実行方法
 
 ```bash
-cd sn2-reaction-electron-cloud-simulator
+cd sn2-reactive-probability-cloud-simulator
 python3 -m http.server 8000
 ```
 
@@ -73,13 +109,16 @@ npm test
 - `Tr(PS) = 22` による価電子数保存
 - Mulliken 電荷総和が `-1`
 - O–C 形成 / C–Cl 切断の overlap population 変化
-- 3D グリッド積分で valence density が 22 電子に近いこと
-- `Δρ` の空間積分が概ね 0 に近いこと
+- reactive donor / acceptor selector の追跡
+- reactive donor / acceptor probability の概略正規化
+- reactive projector が H spectator basis を無視すること
+- reactive channel 電子数が妥当な範囲に入ること
+- cloud sampler / cloud morph の整合性
 
 ## ディレクトリ構成
 
 ```text
-sn2-reaction-electron-cloud-simulator/
+sn2-reactive-probability-cloud-simulator/
 ├─ index.html
 ├─ package.json
 ├─ README.md
@@ -99,8 +138,12 @@ sn2-reaction-electron-cloud-simulator/
 │  ├─ physics/
 │  │  ├─ gaussianBasis.js
 │  │  ├─ extendedHuckel.js
+│  │  ├─ reactiveSpace.js
 │  │  └─ sampler.js
 │  ├─ render/
+│  │  ├─ colorMap.js
+│  │  ├─ cloudSampler.js
+│  │  ├─ cloudTransition.js
 │  │  ├─ scene3d.js
 │  │  └─ energyDiagram.js
 │  ├─ worker/
@@ -108,64 +151,18 @@ sn2-reaction-electron-cloud-simulator/
 │  ├─ main.js
 │  └─ styles.css
 └─ tests/
+   ├─ cloudSampler.test.js
+   ├─ cloudTransition.test.js
    ├─ gaussianBasis.test.js
    ├─ reactionPath.test.js
    ├─ extendedHuckel.test.js
+   ├─ reactiveSpace.test.js
    └─ sampler.test.js
 ```
 
-## 何を計算していて、何を近似しているか
+## 次に伸ばすなら
 
-### 計算しているもの
-
-- AO 値と AO 重なり積分
-- 非直交基底の一般化固有値問題
-- 22 個の価電子を持つ密度行列
-- `ρ(r)` の 3D グリッド評価
-- Mulliken charge / overlap population
-
-### 近似しているもの
-
-- Hamiltonian は extended Hückel
-- 基底は最小基底の 1 primitive Gaussian
-- 反応経路は事前定義の 1D path
-- all-electron 密度ではなく、主計算は価電子密度
-- pseudo-core は見た目用の補助密度
-
-つまり、**反応系そのものを題材にした計算ベースの可視化**ではあるが、**ab initio / DFT の定量予測器ではない**という立ち位置です。
-
-## 見どころ
-
-### Valence density
-
-反応中心を含む価電子雲そのものを見ます。まず題材に対して名前負けしていないビューです。
-
-### Δρ vs reactants
-
-電子再配分を見るなら一番分かりやすいビューです。O 側の gain と C–Cl 側の loss が反応座標に沿って動きます。
-
-### HOMO / LUMO phase
-
-符号付き等値面にしてあるので、SN2 軸に沿った位相構造や節面が見えます。
-
-## 設計上の工夫
-
-1. 描画より先に計算モデルを置いた
-2. 反応の見どころが出るように `density` だけでなく `Δρ` と frontier orbital も用意した
-3. 3D グリッド評価は Worker に逃がして UI を固めにくくした
-4. 近似の限界を README と UI の両方で明示した
-
-## 既知の制約
-
-- 反応障壁や実験電子密度の定量再現を狙うモデルではない
-- basis が小さいので密度の細部は粗い
-- pseudo-core は見た目用の近似であり多電子コア計算ではない
-- 反応経路は最適化済み IRC ではない
-
-## 今後の改善案
-
-- contracted Gaussian への拡張
-- 任意 MO の選択表示
-- 反応ごとの JSON 定義対応
-- 等値面の PNG / GLTF 書き出し
-- IRC や外部幾何データの読込対応
+- ORCA / Gaussian / Psi4 の cube file を読み込んで同じ UI に乗せる
+- reactive orbital の固定追跡ではなく、状態追跡と local diabatization を入れる
+- slice plane と point inspection を追加する
+- donor / acceptor の projector 定義を UI で切り替えられるようにする

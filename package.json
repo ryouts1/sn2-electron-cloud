@@ -1,6 +1,6 @@
 {
-  "name": "sn2-reaction-electron-cloud-simulator",
-  "version": "1.0.0",
+  "name": "sn2-reactive-probability-cloud-simulator",
+  "version": "2.2.0",
   "private": true,
   "type": "module",
   "scripts": {

@@ -1,114 +1,134 @@
-# Scientific model
+# Scientific Model
 
-## Target reaction
+## 1. 何を表示しているか
 
-このプロジェクトの題材は
+この版は `OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の反応座標上で、**反応に直接関与する電子雲だけ** を表示します。
 
-`OH⁻ + CH₃Cl → CH₃OH + Cl⁻`
+表示モードごとの意味は次の通りです。
 
-です。
+### Reactive donor cloud
 
-表示対象は、この反応の 1 次元 reaction coordinate に沿った 3D 電子雲です。
+- 場の元データ: projector で切り出した occupied donor amplitude `ψ_donor(r)`
+- 点の出現確率: `|ψ_donor(r)|²`
+- 色: signed `ψ_donor(r)`
 
-## What is computed at each reaction coordinate
+### Reactive acceptor cloud
 
-各 `q ∈ [0,1]` に対して次を行っています。
+- 場の元データ: projector で切り出した virtual acceptor amplitude `ψ_acceptor(r)`
+- 点の出現確率: `|ψ_acceptor(r)|²`
+- 色: signed `ψ_acceptor(r)`
 
-1. 原子配置 `R(q)` を定義
-2. 価電子 AO 基底を作る
-3. overlap matrix `S` を解析的に計算
-4. extended-Hückel 型 Hamiltonian `H` を作る
-5. `Hc = S cε` を解いて MO を得る
-6. 22 個の価電子を下位軌道から充填する
-7. density matrix `D` を作る
-8. 3D 空間点 `r` に対して `ρ(r)` を評価する
+### Reactive σ-channel density
 
-## AO basis
+- 場の元データ: `ρ_reactive(r)`
+- 点の出現確率: `ρ_reactive(r)`
+- 色: density magnitude
 
-使っている基底は 1 primitive の Cartesian Gaussian です。
+### Reactive Δρ flow
 
-- H: `1s`
-- C: `2s, 2p_x, 2p_y, 2p_z`
-- O: `2s, 2p_x, 2p_y, 2p_z`
-- Cl: `3s, 3p_x, 3p_y, 3p_z`
+- 場の元データ: `Δρ_reactive(r)`
+- 点の出現確率: `|Δρ_reactive(r)|`
+- 色: signed `Δρ_reactive(r)`
 
-合計 16 基底です。
+## 2. 電子状態モデル
 
-## One-electron density
+### 基底
 
-表示している価電子密度は
+- H: 1s
+- C, O, Cl: 1 s + 3 p の最小 valence basis
+- 各 basis function は 1 primitive Gaussian
 
-`ρ(r) = Σμ Σν Dμν φμ(r) φν(r)`
+### Hamiltonian
 
-です。
+- diagonal: 原子軌道 onsite energy
+- off-diagonal: overlap に比例する extended Hückel 型 coupling
 
-ここで
+### 解いている問題
 
-- `φμ(r)` は AO
-- `Dμν` は occupied MO から作った density matrix
+非直交基底での一般化固有値問題を直交化して解いています。
 
-です。
+1. overlap matrix `S`
+2. orthogonalizer `X = S^{-1/2}`
+3. transformed Hamiltonian `X H X`
+4. 固有値・固有ベクトル
+5. MO coefficient matrix `C`
+6. density matrix `P`
 
-## Display modes
+## 3. reactive-only projector
 
-### `valence-density`
+この版の肝は、**全部の電子密度をそのまま見せない** ことです。
 
-価電子密度 `ρ(r)` の isosurface です。
+AO ごとに O / C / Cl の反応軸 x 方向へ重みを置いた projector を作り、
 
-### `total-density`
+- donor 用 projector
+- acceptor 用 projector
+- reactive channel 用 projector
 
-`ρ(r)` に加えて、表示目的の pseudo-core density を足しています。
-これは「全電子を厳密に再計算した」という意味ではなく、原子核近傍の見え方を補うための簡易項です。
+の 3 種類を使い分けています。
 
-### `delta-density`
+### donor selector
 
-反応物側 `q = 0` を基準にした差分
+occupied 軌道の中から、
 
-`Δρ(r) = ρ_current(r) - ρ_reactants(r)`
+- donor projector 上の成分が大きい
+- かつ HOMO 近傍にある
 
-です。
+軌道を reactive donor として選びます。
 
-### `homo-phase` / `lumo-phase`
+### acceptor selector
 
-HOMO / LUMO の MO 振幅
+virtual 軌道の中から、
 
-`ψ_i(r) = Σμ Cμi φμ(r)`
+- acceptor projector 上の成分が大きい
+- かつ LUMO 近傍にある
 
-を表示します。正負の位相を別 surface に分けています。
+軌道を reactive acceptor として選びます。
 
-## Reaction coordinate model
+つまり、単純に HOMO / LUMO をそのまま出すのではなく、**SN2 の反応チャネルに沿った donor / acceptor を選び直している** ということです。
 
-反応座標は 1D の手定義パスです。
+## 4. 密度と軌道の評価
 
-- O···C 距離: 反応物側では長く、生成物側で短くする
-- C···Cl 距離: 反応物側では短く、生成物側で長くする
-- CH₃ の umbrella inversion: TS 近傍で平面化し、生成物側で反転を完了させる
+### full density
 
-そのため、SN2 の「backside attack と立体反転」は見えるようにしています。
+`ρ(r) = Σμ Σν Pμν χμ(r) χν(r)`
 
-## What the model is good for
+### full orbital amplitude
 
-- 反応中心の電子雲の 3D 変化を見る
-- total density だけでは見えにくい電子再配分を `delta-density` で追う
-- O–C 形成と C–Cl 切断を overlap population で確認する
-- HOMO/LUMO の位相面で反応中心の向きを見る
+`ψ_i(r) = Σμ Cμi χμ(r)`
 
-## What the model does not claim
+### reactive projected orbital amplitude
 
-このプロジェクトは次のものではありません。
+`ψ_reactive(r) = Σμ wμ Cμi χμ(r)`
 
-- DFT
-- Hartree–Fock
-- basis set convergence を議論する量子化学計算
-- 実験電子密度の再現
-- 最適化済み IRC
+ここで `wμ` は reactive projector の AO weight です。
 
-したがって、値の読み取りは**定性的**です。
+### reactive channel density
 
-## Why this is still a valid portfolio project
+`ρ_reactive(r)` は、occupied 軌道の reactive projected amplitude から組み立てています。
 
-- 反応名と表示対象が一致している
-- 3D 表示が、計算済み field に基づいている
-- 近似モデルの境界を README と docs に明示している
+## 5. phase color について
 
-この 3 点があるので、「派手なだけの可視化」より説明しやすい構成になっています。
+このプロジェクトの donor / acceptor 軌道は real-valued orbital として扱っています。したがって色が表しているのは complex phase 全体ではなく **wavefunction sign** です。
+
+- positive lobe
+- negative lobe
+- node (`ψ = 0`)
+
+を見やすくするために、中央を暗くした diverging gradient を使っています。
+
+## 6. 何が正しくて、何が近似か
+
+### 表示の意味として揃えていること
+
+- donor / acceptor cloud は `|ψ|²` から点を打つ
+- reactive flow は `|Δρ_reactive|` から点を打つ
+- spectator H basis を projector から外している
+
+### 近似していること
+
+- 電子状態は extended Hückel
+- reactive projector は表示目的の近似分解
+- 反応経路は手組みの 1D path
+- 本格的な NBO / CASSCF / DFT cube をそのまま描いているわけではない
+
+したがって、このアプリは **反応チャネルを絞って見せるための reaction-focused visualizer** であり、研究用の厳密軌道解析器ではありません。

@@ -3,10 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>SN2 3D Electron Cloud Simulator</title>
+    <title>SN2 Reactive Probability Cloud Simulator</title>
     <meta
       name="description"
-      content="OH⁻ + CH₃Cl → CH₃OH + Cl⁻ の反応座標に沿って、extended Hückel と Gaussian 基底で 3D 電子密度を評価するシミュレーター"
+      content="OH⁻ + CH₃Cl → CH₃OH + Cl⁻ の SN2 反応で、反応に関与する donor / acceptor / density-flow のみを位相色つき確率点群で描く 3D シミュレーター"
     />
     <link rel="stylesheet" href="./src/styles.css" />
     <script type="importmap">
@@ -22,13 +22,21 @@
     <div class="app-shell">
       <aside class="panel control-panel">
         <div class="title-block">
-          <p class="eyebrow">Reaction-specific quantum visualization</p>
+          <p class="eyebrow">Reactive-only phase-colored probability cloud</p>
           <h1>OH⁻ + CH₃Cl → CH₃OH + Cl⁻</h1>
           <p class="lead">
-            反応座標に沿って 16 個の価電子 Gaussian 基底から密度行列を作り、
-            3D グリッド上で ρ(r) を評価する SN2 電子雲シミュレーターです。
+            反応に直接関与する電子雲だけを残す版です。表示は donor lone pair、acceptor σ*、
+            そして O–C–Cl 反応チャネルの density flow に限定し、O–H / C–H の spectator density は cloud から外しています。
           </p>
         </div>
+
+        <section class="stage-banner">
+          <div class="stage-chip" id="stage-chip">Reactant basin</div>
+          <h2 id="stage-title">Separated hydroxide and methyl chloride</h2>
+          <p id="stage-detail">
+            Hydroxide is still outside the carbon center while the C–Cl bond remains fully developed.
+          </p>
+        </section>
 
         <div class="control-group">
           <label for="progress-range">Reaction coordinate</label>
@@ -44,17 +52,48 @@
           <div class="button-row">
             <button id="play-toggle" class="primary">Play</button>
             <button id="reset-view">Camera reset</button>
+            <button id="export-frame">PNG export</button>
+          </div>
+        </div>
+
+        <div class="control-group two-column-controls">
+          <div>
+            <label for="playback-speed">Playback speed</label>
+            <select id="playback-speed">
+              <option value="0.06">Slow</option>
+              <option value="0.095" selected>Normal</option>
+              <option value="0.15">Fast</option>
+            </select>
+          </div>
+          <div>
+            <label for="shimmer-rate">Cloud refresh</label>
+            <select id="shimmer-rate">
+              <option value="0">Static</option>
+              <option value="6">6 Hz</option>
+              <option value="10" selected>10 Hz</option>
+              <option value="14">14 Hz</option>
+            </select>
           </div>
         </div>
 
         <div class="control-group">
-          <label for="view-mode">View mode</label>
+          <label class="checkbox-row">
+            <input id="loop-playback" type="checkbox" />
+            <span>Loop playback</span>
+          </label>
+          <label class="checkbox-row">
+            <input id="auto-rotate" type="checkbox" checked />
+            <span>Auto rotate camera</span>
+          </label>
+        </div>
+
+        <div class="control-group">
+          <label for="view-mode">Cloud mode</label>
           <select id="view-mode">
-            <option value="valence-density">Valence density ρ(r)</option>
-            <option value="total-density">Valence + pseudo-core density</option>
-            <option value="delta-density">Δρ(r) vs reactants</option>
-            <option value="homo-phase">HOMO phase surface</option>
-            <option value="lumo-phase">LUMO phase surface</option>
+            <option value="reactive-donor" selected>Reactive donor cloud |ψ|² + phase</option>
+            <option value="reactive-acceptor">Reactive acceptor cloud |ψ|² + phase</option>
+            <option value="reactive-flow">Reactive Δρ channel flow</option>
+            <option value="reactive-channel">Reactive σ-channel density</option>
           </select>
         </div>
 
@@ -62,41 +101,67 @@
           <div>
             <label for="grid-resolution">Grid resolution</label>
             <select id="grid-resolution">
-              <option value="28">28³</option>
-              <option value="34" selected>34³</option>
+              <option value="24">24³</option>
+              <option value="32" selected>32³</option>
               <option value="40">40³</option>
-              <option value="46">46³</option>
+              <option value="48">48³</option>
             </select>
           </div>
           <div>
-            <label for="iso-range">Isovalue</label>
-            <input id="iso-range" type="range" min="3" max="95" value="22" step="1" />
-            <div class="inline-row small-metrics">
-              <span id="iso-label">22</span>
-              <label class="checkbox-row">
-                <input id="auto-iso" type="checkbox" checked />
-                <span>auto</span>
-              </label>
+            <label for="point-count">Particle count</label>
+            <select id="point-count">
+              <option value="12000">12,000</option>
+              <option value="18000" selected>18,000</option>
+              <option value="26000">26,000</option>
+              <option value="36000">36,000</option>
+            </select>
+          </div>
+        </div>
+
+        <div class="control-group two-column-controls">
+          <div>
+            <label for="point-size">Point size</label>
+            <input id="point-size" type="range" min="2" max="8" value="4.4" step="0.1" />
+            <div class="small-metrics"><span id="point-size-label">4.4</span></div>
+          </div>
+          <div>
+            <label>Rendering note</label>
+            <div class="quality-note" id="quality-hint">
+              Color scale and solve time will appear here after the first field evaluation.
             </div>
           </div>
         </div>
 
-        <div class="status-box" id="status-box">3D field ready.</div>
-
+        <div class="status-box">
+          <div id="status-box">Probability cloud ready.</div>
+          <div class="status-subline" id="status-subline"></div>
+        </div>
         <section class="metrics-grid" id="metric-cards"></section>
 
         <section class="note-box">
-          <h2>モデルの前提</h2>
+          <h2>Reactive-only の定義</h2>
           <p>
-            ab initio / DFT ではありません。価電子は一原子一中心 Gaussian 基底 + extended Hückel、
-            コアは表示用の pseudo-core 密度です。式で密度は計算していますが、数値の解釈は定性的です。
+            reactive-only 表示は、O / C / Cl の x 軸方向 σ チャネルに重みを置いた AO projector と、
+            その projector 上で最も反応性の高い occupied donor / virtual acceptor 軌道の抽出で定義しています。
+            つまり「反応に無関係な spectator density を UI から外す」ための表示であり、厳密な NBO 分析そのものではありません。
           </p>
         </section>
       </aside>
 
       <main class="viewer-panel">
         <div id="viewer"></div>
-        <div class="viewer-legend" id="viewer-legend"></div>
+        <div class="viewer-overlay">
+          <div class="phase-legend-box">
+            <div class="phase-legend-title">Cloud color legend</div>
+            <div id="legend-bar" class="phase-legend-bar"></div>
+            <div class="phase-legend-labels">
+              <span id="legend-left"></span>
+              <span id="legend-center"></span>
+              <span id="legend-right"></span>
+            </div>
+          </div>
+          <div class="viewer-legend" id="viewer-legend"></div>
+        </div>
       </main>
 
       <aside class="panel detail-panel">
@@ -106,7 +171,7 @@
         </section>
 
         <section class="detail-section">
-          <h2>Frontier summary</h2>
+          <h2>Reactive orbital summary</h2>
           <div id="frontier-summary" class="key-value-list"></div>
         </section>
 

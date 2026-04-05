@@ -1,93 +1,48 @@
-# Interview notes
+# Interview Notes
 
-## 何を作ったか
+## この作品を一言でいうと
 
-`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の SN2 反応について、
-反応座標に沿って 3D 電子雲を表示するブラウザシミュレーターです。
+`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` を題材に、近似電子状態から **反応に直接関与する donor / acceptor / density-flow だけ** を切り出して、3D の probability cloud として表示する計算可視化ツールです。
 
-表示モードは
+## 以前の版から何を直したか
 
-- valence density
-- total density
-- difference density
-- HOMO phase
-- LUMO phase
+前の版は HOMO / LUMO や全密度もそのまま出していたので、「反応に関係する電子雲だけ見たい」という要求に対してはまだ広すぎました。
 
-を用意しています。
+そこで今回は、
 
-## 前回から何を直したか
+- O / C / Cl の反応軸 x 方向に重みを置く projector を追加
+- occupied donor と virtual acceptor を選び直す selector を追加
+- reactive channel density / reactive flow を別計算にした
+- UI から spectator density の view を外した
 
-前の方向だと「電子雲ビジュアライザー」と言いながら、実質的には題材が水素原子寄りでした。
-今回はそこを修正して、最初の題材だった SN2 反応そのものに戻しています。
+という形に整理しました。
 
-つまり、今回の作品では
+## 何が技術的な見どころか
 
-- 題材: SN2 反応
-- 反応物: `OH⁻ + CH₃Cl`
-- 生成物: `CH₃OH + Cl⁻`
-- 表示対象: その反応座標に沿った 3D field
+- 非直交基底の overlap / orthogonalization / density matrix まで実装していること
+- full electronic model と reactive display model を分離していること
+- worker で field を作り、main thread では stochastic resampling に専念させていること
+- 「反応に関与する電子雲」の定義を projector と energy window で説明できること
+- UI が見せたい化学に合わせて削られていること
 
-で統一しています。
+## 面接で聞かれそうな点
 
-## どこが「ちゃんと計算」なのか
+### これは厳密計算か
 
-最低限ここまでは式でやっています。
+いいえ。電子状態は extended Hückel + 最小基底 Gaussian です。さらに reactive-only の表示は AO projector による近似分解です。
 
-- AO overlap
-- generalized eigenproblem
-- density matrix
-- Mulliken charge
-- overlap population
-- 3D grid 上の field evaluation
+### donor / acceptor はどう定義しているか
 
-なので、単に 3D モデルを morph しているわけではありません。
+SN2 の反応軸に沿う O / C / Cl の x 方向 σ チャネルに重みを置き、occupied 側は HOMO 近傍、virtual 側は LUMO 近傍で projector 成分が大きい軌道を選んでいます。
 
-## どこを近似しているのか
+### 色は何を表しているか
 
-- minimal basis
-- extended-Hückel
-- pseudo-core density は display 用
-- reaction path は手定義
+donor / acceptor cloud では signed `ψ` の gradient です。real-valued orbital として扱っているので、complex phase 全体ではなく正負の sign を表しています。
 
-ここは README と docs に明記しています。
+### なぜ点群にしたか
 
-## 技術的な見どころ
+「電子が見つかりやすい場所ほど点が密になる」表示のほうが、動画で見たい probability cloud の意味と揃うからです。
 
-### 1. 3D field を isosurface 化している
+### 何を今後伸ばすか
 
-ただの点群ではなく、3D グリッドを評価して Marching Cubes で面にしています。
-そのため、反応中心の雲のつながり方が見やすいです。
-
-### 2. 反応の変化が埋もれないように表示モードを分けた
-
-total density だけだと反応の差が見えにくいので、
-`delta-density` と `HOMO/LUMO phase` も用意しています。
-
-### 3. main thread と worker を分離している
-
-3D 表示は Three.js、計算は Worker 側に寄せています。
-UI の操作感を落としにくい構成です。
-
-## 面接で聞かれそうなこと
-
-### Q. これは DFT ですか？
-
-いいえ。minimal-basis の extended-Hückel 型モデルです。
-定量予測ではなく、反応中心の電子再配分を 3D で見せる用途です。
-
-### Q. なぜ total density 以外も入れたのですか？
-
-total density は原子核近傍が強く、反応変化が見えにくいからです。
-差分密度と frontier orbital を切り替えられるようにしました。
-
-### Q. 一番こだわった点は？
-
-「名前と中身を一致させる」ことです。
-今回は最初から最後まで `OH⁻ + CH₃Cl → CH₃OH + Cl⁻` の反応を扱っています。
-
-## 次に伸ばすなら
-
-- contracted basis への拡張
-- arbitrary MO selection
-- slice view の追加
-- reaction definition の外部化
+研究寄りにするなら cube file 読み込み、理論寄りにするなら local diabatization や projector 定義の比較、教材寄りにするなら point inspection や slice plane を追加するのが自然です。

@@ -1,49 +1,64 @@
-# Test plan
+# Test Plan
 
-## Automated tests
+## 1. 数値モデルの確認
 
-### `tests/gaussianBasis.test.js`
+### Gaussian 基底
 
-- 16 個の価電子基底が正しく生成される
-- 各 Gaussian basis function の自己重なりが 1 に近い
+- self-overlap が 1 に近いこと
+- basis function 数が想定通りであること
 
-### `tests/reactionPath.test.js`
+### 反応幾何
 
-- 反応物側・生成物側の O···C / C···Cl 距離
-- TS 側で O···C と C···Cl が対称になること
-- CH₃ の反転座標が符号反転すること
+- reactant / TS / product の距離が意図通り変化すること
+- 炭素反転の向きが反応座標で反転すること
 
-### `tests/extendedHuckel.test.js`
+### 電子数
 
-- `Tr(PS)` による 22 電子保存
-- 総電荷 -1
-- HOMO / LUMO の順序
-- O–C 形成と C–Cl 切断が overlap population に反映されること
+- `Tr(PS)` が 22 に一致すること
+- Mulliken 電荷総和が `-1` に一致すること
 
-### `tests/sampler.test.js`
+### 化学的な指標
 
-- 3D グリッド積分が 22 電子に近いこと
-- difference density の体積積分がおおむね 0 に近いこと
+- O–C overlap population が反応とともに増えること
+- C–Cl overlap population が反応とともに減ること
 
-## Manual checks in browser
+## 2. reactive display model の確認
 
-1. `valence-density` で q を 0 → 1 に動かす
-   - O 側の雲が C 側へ接近し、Cl 側のつながりが弱くなる
-2. `delta-density` に切り替える
-   - 反応中心に gain / loss が分かれて見える
-3. `homo-phase` / `lumo-phase` に切り替える
-   - 正負の位相面が別色で出る
-4. TS プリセットで `O–C` と `C–Cl` の overlap population を確認する
-   - 両方が途中値になる
-5. isovalue を動かしても、反応中心の位置関係が破綻しないことを確認する
+### selector
 
-## Why these tests matter
+- reactant / TS / product で donor / acceptor selector が意図した軌道を選ぶこと
+- donor は occupied、acceptor は virtual から選ばれること
 
-この作品は見た目が先に目に入るので、
-少なくとも次の最低限は担保したいです。
+### projector
 
-- 基底の正規化が壊れていない
-- 電子数保存が壊れていない
-- 反応パスが意図通り
-- 反応方向が overlap population に反映される
-- 3D field の積分が常識的な範囲にある
+- donor / channel projector が H spectator basis に重みを持たないこと
+- reactive channel electron count が全 22 電子よりかなり小さいこと
+
+### reactive field integral
+
+- reactive donor / acceptor probability の積分が概ね 1 に近いこと
+- reactive channel density の積分が数電子程度に収まること
+
+## 3. sampler の確認
+
+### RNG
+
+- fixed seed で deterministic に動くこと
+
+### point cloud boundary
+
+- sampler が境界から極端に外れた点を返さないこと
+- flat index から x / y / z index への復元が正しいこと
+
+## 4. 手動確認
+
+ブラウザでは次を確認する。
+
+1. 初期表示が `Reactive donor cloud` で立ち上がる
+2. Play で反応座標が進み、雲が更新される
+3. cloud refresh を 10 Hz 以上にすると雲が静止画ではなく揺らぐ
+4. donor / acceptor で yellow / magenta の phase gradient が見える
+5. `Reactive Δρ flow` で gain / loss の色分けが見える
+6. spectator H 原子・C–H 結合が reactive center より控えめに見える
+7. PNG export が動く
+8. `python3 -m http.server 8000` で起動できる

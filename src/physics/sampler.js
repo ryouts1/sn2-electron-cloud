@@ -6,7 +6,13 @@ import {
   evaluateOrbitalAmplitude,
   solveExtendedHuckel
 } from './extendedHuckel.js';
-import { percentile } from '../math/numerics.js';
+import {
+  evaluateReactiveAcceptorAmplitude,
+  evaluateReactiveChannelDensityAtPoint,
+  evaluateReactiveDonorAmplitude,
+  evaluateReactiveFlowAtPoint
+} from './reactiveSpace.js';
+import { clamp, percentile } from '../math/numerics.js';
 
 function gaussianCoreDensity(shell, radiusSquared) {
   const normalization = (shell.exponent / Math.PI) ** 1.5;
@@ -35,18 +41,89 @@ export function evaluatePseudoCoreDensity(atoms, point) {
   return density;
 }
 
-function sampleValueAtPoint({ currentModel, referenceModel, atoms, point, view }) {
+function sampleDescriptorAtPoint({ currentModel, referenceModel, atoms, point, view }) {
   switch (view) {
-    case 'valence-density':
-      return evaluateDensityAtPoint(currentModel, point);
-    case 'total-density':
-      return evaluateDensityAtPoint(currentModel, point) + evaluatePseudoCoreDensity(atoms, point);
-    case 'delta-density':
-      return evaluateDeltaDensityAtPoint(currentModel, referenceModel, point);
-    case 'homo-phase':
-      return evaluateOrbitalAmplitude(currentModel, point, currentModel.homoIndex);
-    case 'lumo-phase':
-      return evaluateOrbitalAmplitude(currentModel, point, currentModel.lumoIndex);
+    case 'reactive-channel': {
+      const density = evaluateReactiveChannelDensityAtPoint(currentModel, point);
+      return {
+        rawValue: density,
+        weightValue: Math.max(density, 0),
+        integralValue: density,
+        signedMode: false
+      };
+    }
+    case 'reactive-flow': {
+      const delta = evaluateReactiveFlowAtPoint(currentModel, referenceModel, point);
+      return {
+        rawValue: delta,
+        weightValue: Math.abs(delta),
+        integralValue: delta,
+        signedMode: true
+      };
+    }
+    case 'reactive-donor': {
+      const amplitude = evaluateReactiveDonorAmplitude(currentModel, point);
+      return {
+        rawValue: amplitude,
+        weightValue: amplitude * amplitude,
+        integralValue: amplitude * amplitude,
+        signedMode: true
+      };
+    }
+    case 'reactive-acceptor': {
+      const amplitude = evaluateReactiveAcceptorAmplitude(currentModel, point);
+      return {
+        rawValue: amplitude,
+        weightValue: amplitude * amplitude,
+        integralValue: amplitude * amplitude,
+        signedMode: true
+      };
+    }
+    case 'valence-density': {
+      const density = evaluateDensityAtPoint(currentModel, point);
+      return {
+        rawValue: density,
+        weightValue: Math.max(density, 0),
+        integralValue: density,
+        signedMode: false
+      };
+    }
+    case 'total-density': {
+      const density = evaluateDensityAtPoint(currentModel, point) + evaluatePseudoCoreDensity(atoms, point);
+      return {
+        rawValue: density,
+        weightValue: Math.max(density, 0),
+        integralValue: density,
+        signedMode: false
+      };
+    }
+    case 'delta-density': {
+      const delta = evaluateDeltaDensityAtPoint(currentModel, referenceModel, point);
+      return {
+        rawValue: delta,
+        weightValue: Math.abs(delta),
+        integralValue: delta,
+        signedMode: true
+      };
+    }
+    case 'homo-probability': {
+      const amplitude = evaluateOrbitalAmplitude(currentModel, point, currentModel.homoIndex);
+      return {
+        rawValue: amplitude,
+        weightValue: amplitude * amplitude,
+        integralValue: amplitude * amplitude,
+        signedMode: true
+      };
+    }
+    case 'lumo-probability': {
+      const amplitude = evaluateOrbitalAmplitude(currentModel, point, currentModel.lumoIndex);
+      return {
+        rawValue: amplitude,
+        weightValue: amplitude * amplitude,
+        integralValue: amplitude * amplitude,
+        signedMode: true
+      };
+    }
     default:
       throw new Error(`Unsupported view: ${view}`);
   }
@@ -81,20 +158,23 @@ export function sampleFieldOnGrid({
 }) {
   const gridSize = resolution ** 3;
   const rawField = new Float32Array(gridSize);
-  const positiveField = new Float32Array(gridSize);
-  const negativeField = new Float32Array(gridSize);
-  const values = [];
-  const positiveValues = [];
-  const absoluteValues = [];
+  const weightField = new Float32Array(gridSize);
+  const colorMetricField = new Float32Array(gridSize);
+  const weightValues = [];
+  const magnitudeValues = [];
 
   const stepX = (bounds.maxX - bounds.minX) / (resolution - 1);
   const stepY = (bounds.maxY - bounds.minY) / (resolution - 1);
   const stepZ = (bounds.maxZ - bounds.minZ) / (resolution - 1);
   const cellVolume = stepX * stepY * stepZ;
 
-  let minimum = Number.POSITIVE_INFINITY;
-  let maximum = Number.NEGATIVE_INFINITY;
+  let minimumRaw = Number.POSITIVE_INFINITY;
+  let maximumRaw = Number.NEGATIVE_INFINITY;
+  let maximumMagnitude = 0;
+  let maximumWeight = 0;
   let integral = 0;
+  let totalWeight = 0;
+  let signedMode = false;
 
   let index = 0;
   for (let zIndex = 0; zIndex < resolution; zIndex += 1) {
@@ -103,7 +183,7 @@ export function sampleFieldOnGrid({
       const y = bounds.minY + (stepY * yIndex);
       for (let xIndex = 0; xIndex < resolution; xIndex += 1) {
         const x = bounds.minX + (stepX * xIndex);
-        const value = sampleValueAtPoint({
+        const descriptor = sampleDescriptorAtPoint({
           currentModel,
           referenceModel,
           atoms,
@@ -111,32 +191,19 @@ export function sampleFieldOnGrid({
           view
         });
 
-        rawField[index] = value;
-        minimum = Math.min(minimum, value);
-        maximum = Math.max(maximum, value);
-        integral += value * cellVolume;
-        values.push(value);
+        signedMode = descriptor.signedMode;
+        rawField[index] = descriptor.rawValue;
+        weightField[index] = descriptor.weightValue;
+        integral += descriptor.integralValue * cellVolume;
+        totalWeight += descriptor.weightValue;
+        minimumRaw = Math.min(minimumRaw, descriptor.rawValue);
+        maximumRaw = Math.max(maximumRaw, descriptor.rawValue);
+        maximumMagnitude = Math.max(maximumMagnitude, Math.abs(descriptor.rawValue));
+        maximumWeight = Math.max(maximumWeight, descriptor.weightValue);
 
-        if (view === 'delta-density' || view === 'homo-phase' || view === 'lumo-phase') {
-          const positive = Math.max(value, 0);
-          const negative = Math.max(-value, 0);
-          positiveField[index] = positive;
-          negativeField[index] = negative;
-          if (positive > 0) {
-            positiveValues.push(positive);
-          }
-          if (negative > 0) {
-            positiveValues.push(negative);
-          }
-          if (value !== 0) {
-            absoluteValues.push(Math.abs(value));
-          }
-        } else {
-          const clipped = Math.max(value, 0);
-          positiveField[index] = clipped;
-          if (clipped > 0) {
-            positiveValues.push(clipped);
-          }
+        if (descriptor.weightValue > 0) {
+          weightValues.push(descriptor.weightValue);
+          magnitudeValues.push(Math.abs(descriptor.rawValue));
         }
 
         index += 1;
@@ -144,40 +211,40 @@ export function sampleFieldOnGrid({
     }
   }
 
-  const signedMode = view === 'delta-density' || view === 'homo-phase' || view === 'lumo-phase';
-  const maximumMagnitude = signedMode
-    ? Math.max(Math.abs(minimum), Math.abs(maximum), 1e-12)
-    : Math.max(maximum, 1e-12);
-  const scale = 100 / maximumMagnitude;
+  const quantiles = buildQuantileSummary(weightValues, false);
+  const magnitudeQuantiles = buildQuantileSummary(magnitudeValues, false);
+  const metricScale = signedMode
+    ? Math.max(magnitudeQuantiles.q98, maximumMagnitude * 0.08, 1e-12)
+    : Math.max(quantiles.q98, maximumWeight * 0.08, 1e-12);
 
   for (let fieldIndex = 0; fieldIndex < gridSize; fieldIndex += 1) {
     if (signedMode) {
-      positiveField[fieldIndex] *= scale;
-      negativeField[fieldIndex] *= scale;
+      colorMetricField[fieldIndex] = clamp(rawField[fieldIndex] / metricScale, -1, 1);
     } else {
-      positiveField[fieldIndex] *= scale;
+      colorMetricField[fieldIndex] = clamp(weightField[fieldIndex] / metricScale, 0, 1);
     }
   }
-
-  const quantiles = buildQuantileSummary(signedMode ? absoluteValues : positiveValues, false);
-  const suggestedIsoRaw = Math.max(quantiles.q95, quantiles.median * 1.2, maximumMagnitude * 0.08);
-  const suggestedIsoScaled = Math.max(Math.min(suggestedIsoRaw * scale, 95), 3);
 
   return {
     bounds,
     resolution,
     step: { x: stepX, y: stepY, z: stepZ },
     rawField,
-    positiveField,
-    negativeField,
+    weightField,
+    colorMetricField,
     stats: {
-      minimum,
-      maximum,
+      minimumRaw,
+      maximumRaw,
       maximumMagnitude,
-      scale,
+      maximumWeight,
+      totalWeight,
       integral,
-      suggestedIsoScaled,
-      quantiles
+      quantiles,
+      signedMode,
+      recommendedFloor: Math.max(quantiles.q90 * 0.03, quantiles.median * 0.25, maximumWeight * 1e-6),
+      colorScale: metricScale,
+      colorScaleSource: signedMode ? 'magnitude q98' : 'weight q98',
+      magnitudeQuantiles
     }
   };
 }

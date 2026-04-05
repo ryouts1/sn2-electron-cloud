@@ -8,6 +8,7 @@ import {
   traceProduct
 } from '../math/matrix.js';
 import { buildValenceBasis, buildOverlapMatrix, evaluateBasisVector } from './gaussianBasis.js';
+import { analyzeReactiveOrbitals } from './reactiveSpace.js';
 
 function buildHamiltonianMatrix(basisFunctions, overlapMatrix, couplingScale = 1.75) {
   const size = basisFunctions.length;
@@ -139,7 +140,7 @@ export function solveExtendedHuckel(atoms, options = {}) {
   }
   const lumoIndex = Math.min(homoIndex + 1, occupancies.length - 1);
 
-  return {
+  const model = {
     atoms,
     basisFunctions,
     overlapMatrix,
@@ -165,6 +166,9 @@ export function solveExtendedHuckel(atoms, options = {}) {
       lumo: coefficientColumn(normalizedCoefficients, lumoIndex)
     }
   };
+
+  model.reactiveOrbitals = analyzeReactiveOrbitals(model);
+  return model;
 }
 
 export function evaluateDensityAtPoint(model, point) {

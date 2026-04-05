@@ -33,3 +33,19 @@ test('delta density integrates to approximately zero because electrons are redis
 
   assert.ok(Math.abs(sampled.stats.integral) < 0.65, `delta integral = ${sampled.stats.integral}`);
 });
+
+test('HOMO probability integrates to approximately one over the sampled box', () => {
+  const geometry = getReactionGeometry(0.5);
+  const model = computeReactionSnapshot(geometry);
+  const sampled = sampleFieldOnGrid({
+    currentModel: model,
+    atoms: geometry.atoms,
+    bounds: computeBounds(geometry.atoms, 2.8),
+    resolution: 26,
+    view: 'homo-probability'
+  });
+
+  assert.ok(Math.abs(sampled.stats.integral - 1) < 0.2, `integral = ${sampled.stats.integral}`);
+  assert.ok(sampled.stats.signedMode, 'HOMO view should carry signed phase information.');
+  assert.ok(sampled.stats.maximumWeight > 0, 'Probability field should be positive somewhere.');
+});
