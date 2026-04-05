@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="ja">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>SN2 Electron Cloud Simulator</title>
+    <link rel="stylesheet" href="./src/styles.css" />
+  </head>
+  <body>
+    <main class="app-shell">
+      <header class="page-header">
+        <div>
+          <p class="eyebrow">Organic Chemistry Visualizer</p>
+          <h1>SN2 Electron Cloud Simulator</h1>
+          <p class="lead" id="project-summary">
+            水酸化物イオンによる臭化メチルの SN2 置換反応を、簡略化した電子雲モデルで追う教育用シミュレーター。
+          </p>
+        </div>
+        <div class="equation-block">
+          <p class="equation-label">Reaction</p>
+          <p class="equation" id="reaction-equation"></p>
+          <p class="model-note">※ 量子化学の厳密計算ではなく、教育用の 2D 可視化モデルです。</p>
+        </div>
+      </header>
+
+      <section class="layout">
+        <section class="panel panel--canvas">
+          <div class="panel__head">
+            <div>
+              <h2>Reaction scene</h2>
+              <p class="panel__subtext">backside attack と電子密度の移り変わりを 1 本の反応座標で表現します。</p>
+            </div>
+            <div class="stage-chip" id="stage-chip"></div>
+          </div>
+
+          <div class="scene-wrap">
+            <svg
+              id="reaction-scene"
+              viewBox="0 0 760 460"
+              role="img"
+              aria-labelledby="scene-title scene-description"
+            >
+              <title id="scene-title">SN2 reaction scene</title>
+              <desc id="scene-description">
+                Hydroxide attacks bromomethane from the backside while electron clouds move from oxygen to carbon and then to bromine.
+              </desc>
+            </svg>
+          </div>
+
+          <p class="stage-description" id="stage-description"></p>
+
+          <div class="legend">
+            <div class="legend__item">
+              <span class="legend__swatch legend__swatch--lone-pair"></span>
+              <span>孤立電子対 / 形成中の電子雲</span>
+            </div>
+            <div class="legend__item">
+              <span class="legend__swatch legend__swatch--leaving"></span>
+              <span>脱離基側へ移る電子密度</span>
+            </div>
+            <div class="legend__item">
+              <span class="legend__line legend__line--partial"></span>
+              <span>部分結合</span>
+            </div>
+            <div class="legend__item">
+              <span class="legend__line legend__line--arrow"></span>
+              <span>電子対の流れ</span>
+            </div>
+          </div>
+        </section>
+
+        <aside class="sidebar">
+          <section class="panel">
+            <h2>Controls</h2>
+            <div class="control-row">
+              <label for="progress-slider">Reaction progress</label>
+              <output id="progress-output" for="progress-slider">0%</output>
+            </div>
+            <input id="progress-slider" type="range" min="0" max="1000" step="1" value="0" />
+
+            <div class="button-row">
+              <button id="play-button" type="button">再生</button>
+              <button id="reset-button" type="button" class="button-secondary">リセット</button>
+            </div>
+          </section>
+
+          <section class="panel">
+            <h2>Energy profile</h2>
+            <div id="energy-profile" class="energy-profile"></div>
+          </section>
+
+          <section class="panel">
+            <h2>Model readout</h2>
+            <dl id="reaction-stats" class="stat-list"></dl>
+          </section>
+
+          <section class="panel">
+            <h2>Assumptions</h2>
+            <ul id="assumption-list" class="assumption-list"></ul>
+          </section>
+        </aside>
+      </section>
+    </main>
+
+    <script type="module" src="./src/main.js"></script>
+  </body>
+</html>
