@@ -2,115 +2,59 @@
 
 ## 目的
 
-この版の主目的は、`OH⁻ + CH₃Cl → CH₃OH + Cl⁻` を題材にした 3D 電子雲表示を、**reaction-related cloud only** に寄せることです。
+この版の主目的は、`OH⁻ + CH₃Cl` の単一デモを、**複数の analogous methyl SN2 reaction preset を切り替えられる reactive-only visualizer** に拡張することです。
 
-つまり、見た目の派手さよりも
+## レイヤー分割
 
-- donor lone pair
-- acceptor `σ*`
-- O–C–Cl 反応チャネル内の density flow
+### 1. chemistry layer
 
-を UI 上で明確に切り出すことを優先しています。
-
-## レイヤー構成
-
-### 1. chemistry
-
+- `reactionPresets.js`
+  - 反応プリセット定義
+  - nucleophile / leaving-group / 距離パラメータ / spectator H 数を保持
 - `reactionPath.js`
+  - `progress` と `reactionId` から原子配置と結合描画情報を生成
+  - 反応比較のためのラベルと距離メトリクスも返す
 - `elements.js`
+  - 元素ごとの basis / pseudo-core / 描画パラメータ
+  - 電子数集計関数もここに置く
 
-反応幾何と元素パラメータを持つ層です。SN2 の座標、結合長、炭素反転、reactive / spectator の見せ分けはここに閉じています。
-
-### 2. math
-
-- `matrix.js`
-- `numerics.js`
-
-一般化固有値問題、直交化、補助的な数値関数を持つ層です。
-
-### 3. physics
+### 2. physics layer
 
 - `gaussianBasis.js`
+  - 元素定義から最小基底 AO を生成
 - `extendedHuckel.js`
+  - `S`, `H`, `P`, Mulliken, overlap population を計算
 - `reactiveSpace.js`
+  - nucleophile / carbon / leaving-group の projector を組み、reactive donor / acceptor / channel を抽出
 - `sampler.js`
+  - 3D グリッドへ場を評価して importance sampling 用データを作る
 
-電子状態モデルを扱う層です。
-
-- AO を作る
-- overlap を作る
-- extended Hückel Hamiltonian を作る
-- MO / density matrix を求める
-- reactive donor / acceptor / channel projector を定義する
-- `ρ_reactive(r)`, `Δρ_reactive(r)`, `ψ_reactive(r)` を 3D グリッド上で評価する
-
-### 4. worker
-
-- `densityWorker.js`
-
-重い場の再計算を worker に逃がしています。ここでは grid evaluation と field packaging を担当します。
-
-### 5. render
+### 3. rendering layer
 
 - `scene3d.js`
+  - Three.js による構造描画と point cloud 表示
 - `cloudSampler.js`
+  - field から low-discrepancy + importance sampling で点群を生成
+- `cloudTransition.js`
+  - cloud morph 用の補間
 - `colorMap.js`
+  - 位相 / density flow / density magnitude 用の配色
 - `energyDiagram.js`
+  - 軌道エネルギー図の 2D 表示
 
-描画専用の層です。
+### 4. worker / UI layer
 
-- `scene3d.js` は Three.js のシーンと point cloud の描画
-- `cloudSampler.js` は grid field を確率点群へ変換
-- `colorMap.js` は phase / density-flow 用の配色
-- `energyDiagram.js` は donor / acceptor を強調した 2D の MO ラダー
-
-### 6. main
-
+- `worker/densityWorker.js`
+  - 重い field solve を worker 側へ分離
 - `main.js`
+  - reaction selector、progress、view mode、playback、legend、metrics の制御
 
-UI 状態、worker 通信、再サンプリング、再生制御をまとめています。
+## 今回の設計変更点
 
-## 今回の重要な分離点
+単一反応固定版からの差分は次の 3 点です。
 
-### full electronic model と reactive display model を分離した
+1. reaction preset library を追加した
+2. 元素・電子数・距離を reaction-dependent にした
+3. reactive projector を `O / C / Cl` 固定ではなく `nucleophile / carbon / leaving-group` 役割ベースにした
 
-電子状態自体は full valence basis で解いていますが、表示はそこからさらに reactive projector を通しています。
-
-これにより、
-
-- 計算モデルは壊さずに残せる
-- UI では spectator density を外せる
-- donor / acceptor の定義をあとで差し替えやすい
-
-という利点があります。
-
-### field evaluation と cloud rendering を分離した
-
-まず worker で `|ψ|²` や `ρ_reactive(r)` を格子上に作り、その後 main thread 側で点群へ再サンプリングします。
-
-これにより:
-
-- 反応座標を変えない限り重い再計算を避けられる
-- 同じ分布から何度でも stochastic resampling できる
-- 「揺らぐ雲」の見た目を、物理モデルと描画ロジックを混ぜずに実装できる
-
-### reactive mode ごとに sampling rule を分けた
-
-- `reactive-donor`: weight = `|ψ_donor|²`, color = signed `ψ_donor`
-- `reactive-acceptor`: weight = `|ψ_acceptor|²`, color = signed `ψ_acceptor`
-- `reactive-flow`: weight = `|Δρ_reactive|`, color = signed `Δρ_reactive`
-- `reactive-channel`: weight = `ρ_reactive`, color = density magnitude
-
-この設計により、「何を確率として点にしているか」をビューごとに明示できます。
-
-## 点群表示を続ける理由
-
-今回の要求は「反応に関係する電子雲だけを動画的に見せる」ことなので、表示の主役は isosurface ではなく point cloud のままにしています。
-
-点群の方が、
-
-- 確率が高い場所に粒子が集まる
-- 再サンプリングで動画っぽい雲の揺らぎを出せる
-- donor / acceptor の phase sign を自然に載せやすい
-
-という利点があるためです。
+この構成にしたことで、UI を崩さずに reaction preset を増やせます。
